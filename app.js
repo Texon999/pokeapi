@@ -16,10 +16,10 @@ app.use('/api/auth',     authRoutes)
 
 
 
-app.use('/api/reservas', )
-app.use('/api/sedes',    )
+//app.use('/api/reservas', )
+//app.use('/api/sedes',    )
 
-
+//Toca proteher esto despues de implementar el login, para que solo los usuarios autenticados puedan acceder a estas rutas
 
 
 export default app
