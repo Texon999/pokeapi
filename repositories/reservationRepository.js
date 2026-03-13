@@ -1,13 +1,18 @@
 import { pool } from '../config/db.js'
 
 
-export const findreservation =async ({ id_usuario, id_sede, fecha_inicio, fecha_fin, precio }) => {
+
+
+export const findReservationById = async (id) => {
+
     const [rows] = await pool.execute(
-        "SELECT * FROM reserva WHERE id_usuario = ? AND id_sede = ? AND fecha_inicio = ? AND fecha_fin = ? AND precio = ?", 
-        [id_usuario, id_sede, fecha_inicio, fecha_fin, precio]
+        "SELECT * FROM reserva WHERE id_reserva = ?",
+        [id]
     )
     return rows[0]
 }
+
+
 
 export const createReservation = async (data) => { 
 
@@ -19,7 +24,7 @@ export const createReservation = async (data) => {
     )
 return {
     id: result.insertId, 
-    ...await findReservationById({ id_reserva: result.insertId })
+    ...await findReservationById(result.insertId)
 }
 
 }
