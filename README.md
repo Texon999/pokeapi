@@ -387,6 +387,7 @@ Authorization: Bearer eyJhbGci...
 ✅ Middleware de autenticación
 ✅ Crear reserva
 ✅ Ver mis reservas
+
 ⬜ Consultar reservas por fechas
 ⬜ Consultar reservas por estado
 ⬜ Actualizar reserva
