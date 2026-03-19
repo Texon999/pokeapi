@@ -3,13 +3,18 @@ import bcrypt from "bcryptjs";
 import jwt from 'jsonwebtoken'
 import * as userRepository from '../repositories/userRepository.js' 
 import "dotenv/config"
-
+import { loginSchema, registerSchema } from "../validators/authValidator.js";
+import { validate } from "../utils/validate.js";
 
 export const register = async (user,password) =>{
 if (!user || !password ) {
 throw { status:400 , message: 'Se necesita usuario y contraseña '}
     
 }
+
+validate (registerSchema, { user, password })
+
+
 const userExists = await userRepository.userfind(user)
 
 if (userExists) {
@@ -34,6 +39,8 @@ export const login = async(user, password)=>{
         throw{ status:400 , message:'Falta usuario o contraseña'} 
     }
 
+    validate (loginSchema, { user, password })  
+    
     const userExists = await userRepository.userfind(user)
     if (!userExists) {
     throw { status:401 , message:'Usuario o contraseña incorrectos'   }

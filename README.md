@@ -1,397 +1,230 @@
-#  Backend Hotel Costa Azul
+#  Hotel Costa Azul — Backend
 
-API REST para el sistema de gestión de reservas del Hotel Costa Azul.
-Construida con Node.js, Express y MySQL siguiendo arquitectura por capas.
-
----
-
-##  Tecnologías
-
-- **Node.js** — entorno de ejecución
-- **Express** — framework web
-- **MySQL2** — base de datos relacional
-- **bcryptjs** — hasheo de contraseñas
-- **jsonwebtoken** — autenticación con JWT
-- **dotenv** — variables de entorno
-- **cors** — comunicación con el frontend
+Este es el cerebro del sistema de reservas del Hotel Costa Azul. Se encarga de todo lo que el usuario no ve: guardar usuarios, verificar contraseñas, asignar habitaciones y calcular precios.
 
 ---
 
-##  Estructura del proyecto
+## ¿Qué hace este proyecto?
+
+Imagina que entras a una página de hotel. Puedes registrarte, iniciar sesión, ver los hoteles disponibles y hacer una reserva. Todo eso necesita un servidor que procese la información, la guarde y te responda.
+
+Este proyecto es ese servidor. Está construido con **Node.js** y **Express**, y guarda toda la información en una base de datos **MySQL**.
+
+---
+
+## ¿Qué puede hacer el sistema?
+
+### Sin necesidad de iniciar sesión:
+- Ver todos los hoteles disponibles con su información y precios
+
+### Registrándose:
+- Crear una cuenta con usuario y contraseña
+- Iniciar sesión y recibir un token de acceso
+
+### Con sesión iniciada:
+- Hacer una reserva (el sistema asigna la habitación automáticamente)
+- Ver todas mis reservas
+- Filtrar mis reservas por fechas o por estado
+- Actualizar una reserva
+- Cambiar el estado de una reserva
+- Eliminar mis reservas canceladas
+
+---
+
+## ¿Cómo viaja una petición por el sistema?
+
+### Ejemplo 1 — Registrar un usuario
 
 ```
-backend-costa-azul/
-├── config/
-│   └── db.js                 ← conexión al pool de MySQL
-├── controller/
-│   ├── authController.js     ← maneja req/res de autenticación
-│   └── reservationController.js ← maneja req/res de reservas
-├── middlewares/
-│   └── authMiddleware.js     ← valida JWT en rutas protegidas
-├── models/
-│   └── db.sql                ← esquema de la base de datos
-├── repositories/
-│   ├── userRepository.js     ← queries de usuario
-│   └── reservationRepository.js ← queries de reservas
-├── routes/
-│   ├── authRoutes.js         ← rutas de autenticación
-│   └── reservationRoutes.js  ← rutas de reservas
-├── services/
-│   ├── authService.js        ← lógica de autenticación
-│   └── reservationService.js ← lógica de reservas
-├── app.js                    ← configuración de Express
-├── server.js                 ← punto de entrada
-└── .env                      ← variables de entorno
+1. El frontend manda:
+   POST /api/auth/register
+   { "user": "carlos", "password": "123456" }
+
+2. El servidor recibe la petición en las rutas (authRoutes)
+   "esta URL existe, voy al controller"
+
+3. El controller extrae los datos:
+   user = "carlos", password = "123456"
+   y le pasa el trabajo al service
+
+4. El service valida los datos con Zod:
+   ¿tiene al menos 3 caracteres? 
+   ¿solo letras y números? 
+   ¿ya existe ese usuario en la BD? no → continúa
+
+5. Hashea la contraseña:
+   "123456" → "$2b$10$Xk9mN..." (irreversible)
+   nunca se guarda la contraseña real
+
+6. El repository guarda en MySQL:
+   INSERT INTO usuario (nombre_usuario, contrasena_usuario)
+
+7. El frontend recibe:
+   { "ok": true, "data": { "id": 1, "user": "carlos" } }
 ```
 
 ---
 
-##  Instalación y configuración
+### Ejemplo 2 — Iniciar sesión
 
-### 1. Clonar el repositorio
+```
+1. El frontend manda:
+   POST /api/auth/login
+   { "user": "carlos", "password": "123456" }
+
+2. El service busca al usuario en la base de datos
+
+3. Compara la contraseña con bcrypt:
+   "123456" vs "$2b$10$Xk9mN..." → coinciden 
+
+4. Genera un token JWT:
+   es como una pulsera de concierto — prueba que ya pasaste la entrada
+   dura 7 días y lleva el id del usuario adentro
+
+5. El frontend recibe:
+   { "ok": true, "token": "eyJhbGci...", "user": { "id": 1 } }
+
+6. El frontend guarda ese token
+   lo usará en cada petición privada
+```
+
+---
+
+### Ejemplo 3 — Hacer una reserva
+
+```
+1. El frontend manda:
+   POST /api/reservas
+   Authorization: Bearer eyJhbGci...   ← el token
+   { "id_sede": 1, "fecha_inicio": "2026-12-12", "fecha_fin": "2026-12-15", "tipo": "simple" }
+
+2. El middleware verifica el token:
+   ¿es válido? 
+   ¿no ha expirado? 
+   extrae el id del usuario del token
+
+3. El service valida los datos con Zod:
+   ¿la fecha de inicio no es pasada? 
+   ¿la fecha fin es posterior al inicio? 
+
+4. Busca habitaciones disponibles:
+   ¿hay alguna habitación simple en esas fechas en esa sede?
+   si no hay → error "No hay habitaciones disponibles"
+   si hay → toma la primera disponible
+
+5. Calcula el precio en el servidor:
+   noches = 3 (del 12 al 15 de diciembre)
+   precio = habitacion.precio_noche × noches
+   precio = $150,000 × 3 = $450,000
+   el cliente nunca manda el precio — el servidor lo calcula
+
+6. Guarda la reserva con la habitación asignada
+
+7. El frontend recibe:
+   {
+     "ok": true,
+     "data": {
+       "id_reserva": 5,
+       "id_habitacion": 3,
+       "precio": 450000,
+       "estado": "pendiente"
+     }
+   }
+```
+
+---
+
+### Ejemplo 4 — Ver mis reservas
+
+```
+1. El frontend manda:
+   GET /api/reservas/me
+   Authorization: Bearer eyJhbGci...
+
+2. El middleware verifica el token y extrae el id del usuario
+
+3. El repository busca solo las reservas de ESE usuario:
+   SELECT ... WHERE id_usuario = 1
+   el usuario nunca puede ver las reservas de otros
+
+4. El frontend recibe la lista con nombre del hotel y ciudad incluidos
+```
+
+---
+
+## ¿Qué pasa si algo sale mal?
+
+El sistema siempre responde con un mensaje claro:
+
+```
+Usuario no existe:
+{ "ok": false, "message": "Usuario o contraseña incorrectos" }
+
+Token expirado:
+{ "ok": false, "message": "Token expirado" }
+
+No hay habitaciones:
+{ "ok": false, "message": "No hay habitaciones disponibles en esas fechas" }
+
+Datos con caracteres especiales:
+{ "ok": false, "message": "Solo letras y números, sin caracteres especiales" }
+```
+
+---
+
+## ¿Cómo se protegen las rutas?
+
+Hay rutas públicas y rutas privadas:
+
+```
+PÚBLICAS — cualquiera puede acceder:
+GET /api/auth/register   → registrarse
+GET /api/auth/login      → iniciar sesión
+GET /api/sedes           → ver los hoteles
+
+PRIVADAS — solo con token válido:
+GET  /api/reservas/me    → mis reservas
+POST /api/reservas       → hacer una reserva
+PUT  /api/reservas/:id   → modificar una reserva
+...
+```
+
+Para las rutas privadas hay un guardia de seguridad (middleware) que revisa el token antes de dejar pasar la petición. Si el token es falso o expiró, la petición no llega al destino.
+
+---
+
+## Seguridad
+
+- Las contraseñas nunca se guardan como texto — se transforman con **bcrypt** de forma irreversible
+- El token **JWT** expira en 7 días — si alguien lo roba, en 7 días ya no sirve
+- El precio de la reserva lo calcula el servidor — el cliente no puede inventarse un precio
+- Las consultas a la base de datos usan `?` para prevenir ataques de inyección SQL
+- El id del usuario siempre viene del token — nadie puede hacer reservas a nombre de otro
+
+---
+
+## Instalación rápida
 
 ```bash
+# 1. clonar el proyecto
 git clone https://github.com/tu-usuario/backend-costa-azul.git
 cd backend-costa-azul
-```
 
-### 2. Instalar dependencias
-
-```bash
+# 2. instalar dependencias
 npm install
-```
 
-### 3. Configurar variables de entorno
-
-Crea un archivo `.env` en la raíz del proyecto:
-
-```env
+# 3. crear el archivo .env con tus datos
 PORT=3000
 DB_HOST=localhost
 DB_USER=root
 DB_PASSWORD=tupassword
 DB_NAME=hotel_costa_azul
-JWT_SECRET=clave_secreta_larga_y_segura
+JWT_SECRET=clave_secreta_larga
 JWT_EXPIRES_IN=7d
-```
 
-### 4. Crear la base de datos
+# 4. crear las tablas en MySQL
+# ejecutar el archivo models/db.sql en MySQL Workbench
 
-Abre MySQL Workbench o tu cliente SQL y ejecuta el archivo `models/db.sql`:
-
-```sql
-CREATE DATABASE IF NOT EXISTS hotel_costa_azul;
-USE hotel_costa_azul;
-
-CREATE TABLE IF NOT EXISTS usuario (
-  id_usuario         INT AUTO_INCREMENT PRIMARY KEY,
-  nombre_usuario     VARCHAR(100) NOT NULL UNIQUE,
-  contrasena_usuario VARCHAR(255) NOT NULL,
-  created_at         TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-CREATE TABLE IF NOT EXISTS sede (
-  id_sede     INT AUTO_INCREMENT PRIMARY KEY,
-  nombre      VARCHAR(150) NOT NULL,
-  ciudad      VARCHAR(100) NOT NULL,
-  direccion   VARCHAR(150) NOT NULL,
-  imagen_url  VARCHAR(500) NOT NULL,
-  precio_base DECIMAL(10,2) NOT NULL,
-  descripcion VARCHAR(300)
-);
-
-CREATE TABLE IF NOT EXISTS reserva (
-  id_reserva   INT AUTO_INCREMENT PRIMARY KEY,
-  id_usuario   INT NOT NULL,
-  id_sede      INT NOT NULL,
-  fecha_inicio DATE NOT NULL,
-  fecha_fin    DATE NOT NULL,
-  precio       DECIMAL(10,2) NOT NULL,
-  estado       ENUM('pendiente','confirmada','cancelada','completada') NOT NULL DEFAULT 'pendiente',
-  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (id_usuario) REFERENCES usuario(id_usuario),
-  FOREIGN KEY (id_sede)    REFERENCES sede(id_sede)
-);
-```
-
-### 5. Insertar datos de prueba (sedes)
-
-```sql
-INSERT INTO sede (nombre, ciudad, direccion, imagen_url, precio_base, descripcion)
-VALUES
-  ('Hotel Costa Azul', 'Cartagena', 'Av. Bocagrande #23-45',
-   'https://images.unsplash.com/photo-1566073771259-6a8506099945', 250000,
-   'Hotel frente al mar con vista panorámica'),
-  ('Hotel Dann Carlton', 'Bogotá', 'Calle 97 #15-60',
-   'https://images.unsplash.com/photo-1564501049412-61c2a3083791', 180000,
-   'Hotel ejecutivo en el corazón de la ciudad'),
-  ('Hotel Entonces', 'Medellín', 'El Poblado #43-28',
-   'https://images.unsplash.com/photo-1551882547-ff40c63fe5fa', 150000,
-   'Boutique hotel en el mejor sector de Medellín');
-```
-
-### 6. Iniciar el servidor
-
-```bash
-# desarrollo
+# 5. arrancar el servidor
 npm run dev
-
-# producción
-npm start
-```
-
-El servidor corre en `http://localhost:3000`
-
----
-
-## 🔐 Arquitectura por capas
-
-```
-Request
-   │
-   ▼
-Routes         → define URLs y métodos HTTP
-   │
-   ▼
-Middleware     → valida el token JWT (rutas protegidas)
-   │
-   ▼
-Controllers    → recibe req, llama al service, devuelve res
-   │
-   ▼
-Services       → lógica de negocio y validaciones
-   │
-   ▼
-Repositories   → única capa que habla con MySQL
-   │
-   ▼
-Base de datos
-```
-
----
-
-##  Endpoints
-
-### Autenticación — `/api/auth`
-
-> Rutas públicas, no requieren token
-
----
-
-#### `POST /api/auth/register` — Registrar usuario
-
-**Body:**
-```json
-{
-  "user": "",
-  "password": ""
-}
-```
-
-**Respuesta exitosa `201`:**
-```json
-{
-  "ok": true,
-  "data": {
-    "id": 1,
-    "user": ""
-  }
-}
-```
-
-**Errores posibles:**
-```json
-{ "ok": false, "message": "Usuario y contraseña son obligatorios" }
-{ "ok": false, "message": "Este usuario ya está registrado" }
-```
-
----
-
-#### `POST /api/auth/login` — Iniciar sesión
-
-**Body:**
-```json
-{
-  "user": "",
-  "password": ""
-}
-```
-
-**Respuesta exitosa `200`:**
-```json
-{
-  "ok": true,
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": 1,
-    "user": ""
-  }
-}
-```
-
-**Errores posibles:**
-```json
-{ "ok": false, "message": "Falta usuario o contraseña" }
-{ "ok": false, "message": "Usuario o contraseña incorrectos" }
-```
-
->  Guarda el token — lo necesitas para todos los endpoints de reservas.
-
----
-
-### Reservas — `/api/reservas`
-
-> Rutas protegidas — requieren token en el header:
-> `Authorization: Bearer eyJhbGci...`
-
----
-
-#### `POST /api/reservas` — Crear reserva
-
-El `id_usuario` se extrae automáticamente del token, no hace falta enviarlo.
-
-**Headers:**
-```
-Authorization: Bearer eyJhbGci...
-```
-
-**Body:**
-```json
-{
-  "id_sede": 1,
-  "fecha_inicio": "2024-03-01",
-  "fecha_fin": "2024-03-05",
-  "precio": 250000
-}
-```
-
-**Respuesta exitosa `201`:**
-```json
-{
-  "ok": true,
-  "data": {
-    "id_reserva": 1,
-    "id_usuario": 1,
-    "id_sede": 1,
-    "fecha_inicio": "2024-03-01T00:00:00.000Z",
-    "fecha_fin": "2024-03-05T00:00:00.000Z",
-    "precio": "250000.00",
-    "estado": "pendiente",
-    "created_at": "2024-01-15T10:30:00.000Z"
-  }
-}
-```
-
-**Errores posibles:**
-```json
-{ "ok": false, "message": "Todos los campos son obligatorios" }
-{ "ok": false, "message": "Token requerido" }
-{ "ok": false, "message": "Token expirado" }
-```
-
----
-
-#### `GET /api/reservas/me` — Ver mis reservas
-
-Devuelve solo las reservas del usuario autenticado.
-
-**Headers:**
-```
-Authorization: Bearer eyJhbGci...
-```
-
-**Body:** ninguno
-
-**Respuesta exitosa `200`:**
-```json
-{
-  "ok": true,
-  "data": [
-    {
-      "id_reserva": 1,
-      "fecha_inicio": "2024-03-01T00:00:00.000Z",
-      "fecha_fin": "2024-03-05T00:00:00.000Z",
-      "precio": "250000.00",
-      "estado": "pendiente",
-      "nombre": "Hotel Costa Azul",
-      "ciudad": "Cartagena"
-    }
-  ]
-}
-```
-
-**Si no tiene reservas:**
-```json
-{
-  "ok": true,
-  "data": []
-}
-```
-
----
-
-##  Flujo completo — ejemplo de uso
-
-```
-1. Registrar usuario
-   POST /api/auth/register
-   { "user": "carlos", "password": "123456" }
-   → usuario creado en la BD con contraseña hasheada
-
-2. Iniciar sesión
-   POST /api/auth/login
-   { "user": "carlos", "password": "123456" }
-   → recibe token JWT
-
-3. Crear reserva (con token)
-   POST /api/reservas
-   Authorization: Bearer eyJhbGci...
-   { "id_sede": 1, "fecha_inicio": "2024-03-01", ... }
-   → middleware valida token → extrae id_usuario
-   → reserva creada con estado "pendiente"
-
-4. Ver mis reservas (con token)
-   GET /api/reservas/me
-   Authorization: Bearer eyJhbGci...
-   → devuelve solo las reservas del usuario autenticado
-```
-
----
-
-##  Seguridad implementada
-
-| Medida | Descripción |
-|---|---|
-| Contraseñas hasheadas | bcrypt con  salt rounds |
-| JWT  expira en 7 días 
-| SQL injection  Placeholders `?` en todas las queries |
-| Mensaje genérico  Login no revela si el usuario existe |
-| id_usuario del token  El cliente no puede falsificar su identidad |
-
----
-
-##  Probar con Postman
-
-1. Importa las peticiones en orden
-2. Haz login y copia el token de la respuesta
-3. En cada petición protegida ve a `Authorization → Bearer Token` y pega el token
-4. Asegúrate de tener al menos una sede insertada en la BD antes de crear reservas
-
----
-
-## 📌 Estado actual del proyecto
-
-```
-✅ Registro de usuarios
-✅ Login con JWT
-✅ Middleware de autenticación
-✅ Crear reserva
-✅ Ver mis reservas
-
-⬜ Consultar reservas por fechas
-⬜ Consultar reservas por estado
-⬜ Actualizar reserva
-⬜ Eliminar reservas canceladas
-⬜ Estadísticas
-⬜ Integración con frontend React
 ```

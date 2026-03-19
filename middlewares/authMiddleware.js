@@ -12,16 +12,9 @@ export const protect = (req, res, next) => {
       return res.status(401).json({ ok: false, message: 'Token requerido' })
 
     }
-
     const token = authHeader.split(' ')[1]
-   
-
-
     const decoded = jwt.verify(token, process.env.JWT_SECRET)
-
     req.user = decoded
- 
-
     next() 
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
@@ -29,4 +22,4 @@ export const protect = (req, res, next) => {
     }
     return res.status(401).json({ ok: false, message: 'Token inválido' })
   }
-}
+} 
